@@ -1,13 +1,17 @@
 import { ChartLineIcon, CircleDollarSignIcon, PlayCircleIcon, StarIcon, UserIcon } from 'lucide-react';
 import { useEffect, useState } from 'react'
-import {dummyDashboardData} from '../../assets/assets';
 import Loading from '../../components/Loading';
 import Title from '../../components/admin/Title';
 import BlurCircle from '../../components/BlurCircle';
 import dateFormat from '../../lib/dateFormat';
+import { useAppContext } from '../../context/AppContext';
+import { toast } from 'react-hot-toast';
 const Dashboard = () => {
 
   const currency = import.meta.env.VITE_CURRENCY;
+
+  const { axios, getToken, user, image_base_url } = useAppContext()
+
   const [dashboardData, setDashboardData] = useState({
     totalBookings: 0,
     totalRevenue: 0,
@@ -41,13 +45,29 @@ const Dashboard = () => {
   ]
 
   const fetchDashboardData = async () => {
-    setDashboardData(dummyDashboardData)
-    setLoading(false)
+    try{
+      const {data } = await axios.get('/api/admin/dashboard',{
+        headers: {
+          Authorization: `Bearer ${await getToken()}`
+        }
+      })
+      if (data.success) {
+        setDashboardData(data.dashboardData);
+        setLoading(false);
+      } else {
+        console.error("Failed to fetch dashboard data:", data.message);
+        toast.error(data.message || "Failed to fetch dashboard data");
+      }
+    } catch (err) {
+      console.error("Error fetching dashboard data:", err);
+      toast.error("An error occurred while fetching dashboard data", err);
+    }
   }
-
   useEffect(() => {
-    fetchDashboardData()
-  }, [])
+    if(user){
+      fetchDashboardData()
+    }
+  }, [user])
 
   return !loading ? (
     <div className=''>
@@ -75,7 +95,7 @@ const Dashboard = () => {
       className='w-55 rounded-xl overflow-hidden bg-3 bg-primary/10 border border-primary/20 hover:-translate-y-1 hover:shadow-md transition duration-300'
     >
       <img
-        src={show.movie.poster_path}
+        src={`${image_base_url}${show.movie.poster_path}`}
         alt={show.movie.title}
         className='h-60 w-full object-cover'
       />
