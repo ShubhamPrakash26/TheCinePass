@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { dummyShowsData, dummyDateTimeData } from '../assets/assets';
+// import { dummyShowsData, dummyDateTimeData } from '../assets/assets';
 import BlurCircle from '../components/BlurCircle';
 import { Heart, PlayCircleIcon, StarIcon } from 'lucide-react';
 import timeFormat from '../lib/timeFormat';
@@ -9,6 +9,7 @@ import MovieCard from '../components/MovieCard';
 import { useNavigate } from 'react-router-dom';
 import Loading from '../components/Loading';
 import { useAppContext } from '../context/AppContext';
+import toast from 'react-hot-toast';
 
 const MovieDetails = () => {
   const { id } = useParams();
@@ -18,18 +19,36 @@ const MovieDetails = () => {
   const {shows, axios, getToken, user, favoriteMovies,fetchFavoriteMovies, image_base_url} = useAppContext();
 
   const getShow = async () => {
-    try{
-      const {data} = axios.get(`/api/show/${id}`);
-      if(data.success){
-        setShow(data)
-      }
-    } catch(error){
-      console.error('Error fetching show details:', error);
+  try {
+    const { data } = await axios.get(`/api/show/${id}`);
+    if (data.success) {
+      setShow(data);
+    } else {
       setShow(false);
     }
-  };
+  } catch (error) {
+    console.error('Error fetching show details:', error);
+    setShow(false);
+  }
+};
 
-  
+const handleFavorite = async () => {
+  try{
+    if (!user) {
+      return toast.error('Please login to add favorites');
+    }
+    const {data} = await axios.post('/api/user/update-favorites', {movieId: id}, {
+      headers: { Authorization: `Bearer ${await getToken()}` }
+    })
+    if(data.success){
+      await fetchFavoriteMovies();
+      toast.success(data.message);
+    }
+
+  } catch(error){
+    console.error('Error handling favorite:', error);
+  }
+}
 
   useEffect(() => {
     getShow();
@@ -65,7 +84,7 @@ const MovieDetails = () => {
               </button>
             <a href="#dateSelect" className='px-10 py-3 text-sm bg-primary hover:bg-primary-dull transition rounded-md font-medium cursor-pointer active:scale-95'>Buy Tickets</a>
             <button className='bg-gray-700 p-2.5 rounded-full transition cursor-pointer active:scale-95'>
-              <Heart className={`w-5 h-5`} />
+              <Heart onClick={handleFavorite} className={`w-5 h-5 ${favoriteMovies.find(movie => movie._id ===id )? 'fill-primary text-primary' : ''}`} />
             </button>
           </div>
         </div>
@@ -84,8 +103,8 @@ const MovieDetails = () => {
       <DateSelect dateTime={show.dateTime} id={id} />
       <p className='text-lg font-medium mt-20 mb-8'>You May Also Like</p>
       <div className='flex flex-wrap max-sm:justify-center gap-8'>
-          {shows.slice(0,4).map((movie, index) => (
-            <MovieCard key={index} movie={movie} />
+          {shows.slice(0, 4).map((show, index) => (
+            <MovieCard key={index} movie={show.movie} />
           ))}
       </div>
       <div className='flex justify-center mt-20'>
