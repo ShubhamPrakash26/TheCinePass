@@ -1,5 +1,7 @@
 import Show from "../models/Shows.js";
 import Booking from "../models/Booking.js";
+import Stripe from 'stripe';
+import { url } from "inspector";
 
 //Funtion to check availability of selected seats for a movie
 
@@ -48,11 +50,48 @@ export const createBooking = async (req, res) => {
         showData.markModified('occupiedSeats');
         await showData.save();
 
-        //Stripe Gatewau initialization
+        //Stripe Gateway initialization
+        const stripeInstance = new Stripe(process.env.STRIPE_SECRET_KEY);
+        //Creating line items for stripe
+        const line_items = [{
+            price_data: {
+                currency: 'usd',
+                product_data:{
+                    name: showData.movie.title
+                },
+                unit_amount: Math.floor(booking.amount * 100) 
+            },
+            quantity: 1
+        }]
 
-        res.json({success: true, message: "Booking created successfully"});
+        const session = await stripeInstance.checkout.sessions.create({
+            success_url: `${origin}/loading/my-bookings`,
+            cancel_url: `${origin}/my-bookings`,
+            line_items: [
+                {
+                price_data: {
+                    currency: 'usd',
+                    product_data: {
+                    name: showData.movie.title
+                    },
+                    unit_amount: Math.floor(booking.amount * 100),
+                },
+                quantity: 1
+                }
+            ],
+            mode: 'payment',
+            metadata: {
+                bookingId: booking._id.toString(),
+            },
+            expires_at: Math.floor(Date.now() / 1000) + 30 * 60,
+            });
+
+        booking.paymentLink = session.url;
+        await booking.save();
+
+        res.json({success: true, url: session.url});
     } catch(error) {
-        console.log(error.message);
+        console.error("Booking Error:", error);
         res.json({
             success: false,
             message: "Something went wrong while creating booking"
