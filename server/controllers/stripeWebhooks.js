@@ -22,7 +22,7 @@ export const stripeWebhooks = async (req, res) =>{
                         payment_intent: payment_intent.id,
                     })
                     const session = sessionList.data[0];
-                    const bookingId = session.metadata.bookingId;
+                    const {bookingId} = session.metadata;
                     await Booking.findByIdAndUpdate(
                         bookingId, {
                             idPaid: true,
@@ -32,7 +32,6 @@ export const stripeWebhooks = async (req, res) =>{
                 }
             default:
                 console.log(`Unhandled event type ${event.type}`);
-                break;
         }
         res.json({received: true});
     } catch (err) {

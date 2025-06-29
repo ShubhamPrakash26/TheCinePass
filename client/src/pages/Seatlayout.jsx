@@ -96,7 +96,6 @@ const Seatlayout = () => {
       });
       if(data.success){
         window.location.href = data.url;
-        
       } else{
         toast.error(data.message || "Failed to book the ticket.");
       }

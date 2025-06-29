@@ -14,6 +14,7 @@
   "dependencies": {
     "@clerk/express": "^1.7.0",
     "axios": "^1.10.0",
+    "clear": "^0.1.0",
     "cloudinary": "^2.7.0",
     "cors": "^2.8.5",
     "dotenv": "^16.5.0",
@@ -21,7 +22,7 @@
     "inngest": "^3.39.2",
     "mongoose": "^8.16.0",
     "stripe": "^18.2.1",
-    "svix": "^1.67.0"
+    "svix": "^1.68.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.10"
