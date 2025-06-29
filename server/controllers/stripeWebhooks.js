@@ -1,33 +1,51 @@
 import stripe from 'stripe';
 import Booking from '../models/Booking.js';
 
-export const stripeWebhooks = async (req, res) =>{
+export const stripeWebhooks = async (req, res) => {
     const stripeInstance = new stripe(process.env.STRIPE_SECRET_KEY);
     const sig = req.headers['stripe-signature'];
     const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
     let event;
+
     try {
         event = stripeInstance.webhooks.constructEvent(req.body, sig, webhookSecret);
     }
     catch (err) {
         return res.status(400).send(`Webhook Error: ${err.message}`);
     }
+
     // Handle the event
-    try{
+    try {
         switch(event.type) {
             case 'payment_intent.succeeded':
                 {
                     const payment_intent = event.data.object;
                     const sessionList = await stripeInstance.checkout.sessions.list({
                         payment_intent: payment_intent.id,
-                    })
+                    });
                     const session = sessionList.data[0];
-                    const {bookingId} = session.metadata;
-                    await Booking.findByIdAndUpdate(
-                        bookingId, {
-                            idPaid: true,
-                            paymentLink: ""
-                        })
+                    
+                    if (session && session.metadata && session.metadata.bookingId) {
+                        const { bookingId } = session.metadata;
+                        
+                        // Fixed: Changed 'idPaid' to 'isPaid' to match the schema
+                        const updatedBooking = await Booking.findByIdAndUpdate(
+                            bookingId, 
+                            {
+                                isPaid: true,  // Changed from 'idPaid' to 'isPaid'
+                                paymentLink: ""
+                            },
+                            { new: true }  // Return the updated document
+                        );
+                        
+                        if (updatedBooking) {
+                            console.log(`Booking ${bookingId} marked as paid successfully`);
+                        } else {
+                            console.error(`Booking ${bookingId} not found`);
+                        }
+                    } else {
+                        console.error('No session or bookingId found in metadata');
+                    }
                     break;
                 }
             default:
