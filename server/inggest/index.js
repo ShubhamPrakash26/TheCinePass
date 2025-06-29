@@ -87,36 +87,69 @@ const sendBookingConfirmationEmail = inngest.createFunction(
         
         // Add error handling and retry logic
         const booking = await step.run('fetch-booking-details', async () => {
-            // Add retry logic to handle potential timing issues
+            // First, get the booking without population to check if it exists
+            const basicBooking = await Booking.findById(bookingId);
+            if (!basicBooking) {
+                throw new Error(`Booking with ID ${bookingId} not found`);
+            }
+            
+            console.log(`Found booking: ${bookingId}`, {
+                userId: basicBooking.user,
+                showId: basicBooking.show,
+                isPaid: basicBooking.isPaid
+            });
+            
+            // Check if user exists separately
+            const user = await User.findById(basicBooking.user);
+            if (!user) {
+                console.error(`User with ID ${basicBooking.user} not found for booking ${bookingId}`);
+                throw new Error(`User with ID ${basicBooking.user} not found for booking ${bookingId}`);
+            }
+            
+            console.log(`Found user: ${user._id}`, {
+                name: user.name,
+                email: user.email
+            });
+            
+            // Now populate the booking with retry logic
             let booking = null;
             let retries = 3;
             
             while (retries > 0 && !booking) {
-                booking = await Booking.findById(bookingId).populate({
-                    path: 'show',
-                    populate: {
-                        path: 'movie',
-                        model: 'Movie'
-                    }
-                }).populate('user');
+                booking = await Booking.findById(bookingId)
+                    .populate({
+                        path: 'show',
+                        populate: {
+                            path: 'movie',
+                            model: 'Movie'
+                        }
+                    })
+                    .populate('user');
                 
                 if (!booking) {
-                    console.log(`Booking ${bookingId} not found, retrying... (${retries} attempts left)`);
+                    console.log(`Failed to populate booking ${bookingId}, retrying... (${retries} attempts left)`);
+                    await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+                    retries--;
+                } else if (!booking.user) {
+                    console.log(`User population failed for booking ${bookingId}, retrying... (${retries} attempts left)`);
+                    booking = null; // Reset to retry
                     await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
                     retries--;
                 }
             }
             
             if (!booking) {
-                throw new Error(`Booking with ID ${bookingId} not found after retries`);
+                throw new Error(`Failed to populate booking ${bookingId} after retries`);
             }
             
             if (!booking.user) {
-                throw new Error(`User not found for booking ${bookingId}`);
+                // If population still fails, manually attach the user
+                console.log(`Population failed, manually attaching user to booking ${bookingId}`);
+                booking.user = user;
             }
             
             if (!booking.user.email) {
-                throw new Error(`Email not found for user in booking ${bookingId}`);
+                throw new Error(`Email not found for user ${booking.user._id} in booking ${bookingId}`);
             }
             
             if (!booking.show) {

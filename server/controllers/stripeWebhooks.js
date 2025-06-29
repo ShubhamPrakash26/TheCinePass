@@ -1,9 +1,10 @@
 import stripe from 'stripe';
 import Booking from '../models/Booking.js';
+import User from '../models/User.js';
 import { inngest } from '../inggest/index.js';
 
 export const stripeWebhooks = async (req, res) => {
-    const stripeInstance = new stripe(process.env.STRIPE_SECRET_KEY);
+    const stripeInstance = new stripe(process.STRIPE_SECRET_KEY);
     const sig = req.headers['stripe-signature'];
     const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
     let event;
@@ -29,24 +30,68 @@ export const stripeWebhooks = async (req, res) => {
                     if (session && session.metadata && session.metadata.bookingId) {
                         const { bookingId } = session.metadata;
                         
-                        // Fixed: Changed 'idPaid' to 'isPaid' to match the schema
+                        console.log(`Processing payment for booking: ${bookingId}`);
+                        
+                        // First, check if booking exists and log its current state
+                        const existingBooking = await Booking.findById(bookingId);
+                        if (!existingBooking) {
+                            console.error(`Booking ${bookingId} not found in database`);
+                            return res.status(404).json({ error: 'Booking not found' });
+                        }
+                        
+                        console.log(`Found booking ${bookingId}:`, {
+                            userId: existingBooking.user,
+                            showId: existingBooking.show,
+                            currentPaidStatus: existingBooking.isPaid,
+                            amount: existingBooking.amount,
+                            seats: existingBooking.bookedSeat
+                        });
+                        
+                        // Check if the user exists
+                        const user = await User.findById(existingBooking.user);
+                        if (!user) {
+                            console.error(`User ${existingBooking.user} not found for booking ${bookingId}`);
+                            return res.status(404).json({ error: 'User not found' });
+                        }
+                        
+                        console.log(`Found user ${user._id}:`, {
+                            name: user.name,
+                            email: user.email
+                        });
+                        
+                        // Update the booking
                         const updatedBooking = await Booking.findByIdAndUpdate(
-                            bookingId, 
+                            bookingId,
                             {
-                                isPaid: true,  // Changed from 'idPaid' to 'isPaid'
+                                isPaid: true,
                                 paymentLink: ""
                             },
-                            { new: true }  // Return the updated document
+                            { new: true }
                         );
                         
                         if (updatedBooking) {
                             console.log(`Booking ${bookingId} marked as paid successfully`);
-                            await inngest.send({
-                                name: 'app/show.booked',
-                                data: {bookingId}
-                            })
+                            console.log(`Updated booking details:`, {
+                                isPaid: updatedBooking.isPaid,
+                                user: updatedBooking.user,
+                                show: updatedBooking.show
+                            });
+                            
+                            // Add a small delay to ensure all database operations are complete
+                            setTimeout(async () => {
+                                try {
+                                    await inngest.send({
+                                        name: 'app/show.booked',
+                                        data: { bookingId }
+                                    });
+                                    console.log(`Inngest event sent for booking ${bookingId}`);
+                                } catch (inngestError) {
+                                    console.error(`Failed to send Inngest event for booking ${bookingId}:`, inngestError);
+                                }
+                            }, 1000); // 1 second delay
+                            
                         } else {
-                            console.error(`Booking ${bookingId} not found`);
+                            console.error(`Failed to update booking ${bookingId}`);
                         }
                     } else {
                         console.error('No session or bookingId found in metadata');
