@@ -18,9 +18,7 @@ export const getNowPlayingMovies = async (req, res) => {
     }
 };
 
-
 // API to add a new movie to the database
-
 export const addShow = async (req, res) => {
     try{
         const {movieId, showsInput, showPrice} = req.body;
@@ -76,7 +74,6 @@ export const addShow = async (req, res) => {
 }
 
 // API to get all shows from the database
-
 export const getShows = async (req,res) =>{
     try{
         const shows = await Show.find({showDateTime: {$gte: new Date()}}).populate('movie').sort({showDateTime: 1});
@@ -91,32 +88,42 @@ export const getShows = async (req,res) =>{
 }
 
 // API to get a single show from the database
-
 export const getShow = async (req, res) => {
     try{
-        const {movieId} =req.params;
-        //get all upcoming shows for a movie
-        const shows = await Show.find({movie: movieId, showDateTime : {$gte: new Date()}})
+        const {movieId} = req.params;
+        
+        // Get all upcoming shows for a movie
+        const shows = await Show.find({movie: movieId, showDateTime : {$gte: new Date()}});
         const movie = await Movie.findById(movieId);
+        
+        // Check if movie exists
+        if (!movie) {
+            return res.json({success: false, message: 'Movie not found'});
+        }
+        
         const dateTime = {};
-        shows.forEach((show) =>{
+        
+        // Process all shows and build the dateTime object
+        shows.forEach((show) => {
             const date = show.showDateTime.toISOString().split('T')[0];
             if(!dateTime[date]){
                 dateTime[date] = [];
             }
             dateTime[date].push({
-                time: show.showDateTime, showId: show._id
-            })
-            res.json({
-                success: true,
-                movie,
-                dateTime
+                time: show.showDateTime, 
+                showId: show._id
             });
-        })
+        });
+        
+        // Send response only once, after processing all shows
+        res.json({
+            success: true,
+            movie,
+            dateTime
+        });
 
     } catch (error) {
         console.error(error);
         res.json({success: false, message: error.message});
     }
 }
-
