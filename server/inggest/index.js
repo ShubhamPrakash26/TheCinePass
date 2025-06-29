@@ -246,10 +246,158 @@ const sendBookingConfirmationEmail = inngest.createFunction(
     }
 )
 
+// Reminder emails
+const showSendReminders = inngest.createFunction(
+    {id: "send-show-emails"},
+    {cron: "0 */8 * * *"},
+    async ({step}) => {
+        const now = new Date();
+        const targetTime = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+        const searchWindowStart = new Date(targetTime.getTime() - 30 * 60 * 1000);
+        const searchWindowEnd = new Date(targetTime.getTime() + 30 * 60 * 1000);   
+
+        const reminderTasks = await step.run("prepare-reminder-tasks", async () => {
+            const shows = await Show.find({
+                showTime: {$gte: searchWindowStart, $lte: searchWindowEnd},
+            }).populate('movie');
+
+            const tasks = [];
+            for (const show of shows) {
+                if (show.movie && show.occupiedSeats && Object.keys(show.occupiedSeats).length > 0) {
+                    const userIds = [...new Set(Object.values(show.occupiedSeats))];
+                    
+                    if (userIds.length === 0) continue;
+
+                    const users = await User.find({_id: {$in: userIds}}).select('name email');
+                    for (const user of users) {
+                        tasks.push({
+                            userEmail: user.email,
+                            userName: user.name,
+                            movieTitle: show.movie.title,
+                            showTime: show.showTime,
+                        });
+                    }
+                }
+            }
+            return tasks;
+        });
+
+        if(reminderTasks.length === 0) {
+            return {sent: 0, message: "No reminders to send"};
+        }
+
+        const results = await step.run('send-all-reminders', async () =>{
+            return await Promise.all(reminderTasks.map(task => {
+                const emailBody = `
+                    <div style="max-width:600px; margin:20px auto; background-color:#09090B; border-radius:12px; box-shadow:0 4px 15px rgba(0,0,0,0.3); overflow:hidden; color:white; font-family:'Outfit', sans-serif, Arial;">
+                        <div style="background-color:#1a1a1d; padding:20px 30px; text-align:center; border-bottom:1px solid #2a2a2d;">
+                            <h1 style="margin:0; font-size:26px; color:white; font-family:'Outfit', sans-serif, Arial; letter-spacing:1px;">
+                                <span style="display:inline-block; vertical-align:middle; margin-right:8px;">🎬</span> TheCinePass
+                            </h1>
+                        </div>
+                        <div style="padding:25px 35px; line-height:1.6;">
+                            <h2 style="color:white; margin-top:0; margin-bottom:20px; font-size:22px; font-family:'Outfit', sans-serif, Arial;">Hello ${task.userName},</h2>
+                            <p style="margin-bottom:15px; font-size:16px; font-family:'Outfit', sans-serif, Arial;">This is a quick reminder about your upcoming movie:</p>
+                            <div style="background-color:#161618; padding:20px; border-radius:8px; margin-bottom:25px; text-align:center;">
+                                <h3 style="color:#F84565; font-size:26px; margin:0; padding:0; font-family:'Outfit', sans-serif, Arial; line-height:1.2;">${task.movieTitle}</h3>
+                            </div>
+                            <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:25px;">
+                                <tr>
+                                    <td style="width:50%; padding-right:10px; vertical-align:top;">
+                                        <p style="margin:0; font-size:16px; color:#cccccc; font-family:'Outfit', sans-serif, Arial;">
+                                            <span style="display:inline-block; vertical-align:middle; margin-right:5px; font-size:20px;">📅</span> Date:
+                                            <br>
+                                            <strong style="color:#F84565; font-size:18px;">${new Date(task.showTime).toLocaleDateString('en-US', { timeZone: 'Asia/Kolkata' })}</strong>
+                                        </p>
+                                    </td>
+                                    <td style="width:50%; padding-left:10px; vertical-align:top;">
+                                        <p style="margin:0; font-size:16px; color:#cccccc; font-family:'Outfit', sans-serif, Arial;">
+                                            <span style="display:inline-block; vertical-align:middle; margin-right:5px; font-size:20px;">⏰</span> Time:
+                                            <br>
+                                            <strong style="color:#F84565; font-size:18px;">${new Date(task.showTime).toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' })}</strong>
+                                        </p>
+                                    </td>
+                                </tr>
+                            </table>
+                            <p style="margin-bottom:25px; font-size:16px; font-family:'Outfit', sans-serif, Arial; text-align:center;">
+                                Your show starts in approximately <strong style="color:#F84565; font-size:18px;">8 hours</strong> – get ready for the experience!
+                            </p>
+                            <p style="text-align:center; margin-top:30px; margin-bottom:20px;">
+                                <a href="#" style="display:inline-block; background-color:#F84565; color:white; padding:14px 30px; border-radius:6px; text-decoration:none; font-weight:bold; font-size:18px; font-family:'Outfit', sans-serif, Arial; box-shadow:0 4px 8px rgba(0,0,0,0.2);">
+                                    <span style="display:inline-block; vertical-align:middle; margin-right:8px; font-size:22px;">🎟️</span> View My Tickets
+                                </a>
+                            </p>
+                            <p style="margin-top:20px; text-align:center; color:#cccccc; font-size:15px; font-family:'Outfit', sans-serif, Arial;">
+                                Enjoy the show!
+                            </p>
+                        </div>
+                        <div style="background-color:#1a1a1d; padding:15px 30px; text-align:center; font-size:13px; color:#888888; border-top:1px solid #2a2a2d; font-family:'Outfit', sans-serif, Arial;">
+                            <p style="margin:0;">TheCinePass Team</p>
+                            <p style="margin:5px 0 0 0;">&copy; 2025 TheCinePass. All rights reserved.</p>
+                        </div>
+                    </div>
+                `;
+            }));
+        });
+        const sent = results.filter(r => r.status === 'fulfilled').length;
+        const failed = results.length - sent;
+        return { sent, failed, message: `${sent} reminders sent successfully, ${failed} failed` };
+    }
+);
+
+// Inngest function to send notification when a new show is created
+const sendNewShowNotification = inngest.createFunction(
+    {id: "send-new-show-notification"},
+    {event: "app/show.created"},
+    async ({event}) => {
+        const { movieTitle, movieId} = event.data;
+        const users = await User.find({});
+        for (const user of users) {
+            const userEmail = user.email;
+            const userName = user.name;
+            const subject = `🎬 New Show Added ${movieTitle}`;
+            const body = `
+                <div style="max-width:600px; margin:20px auto; background-color:#09090B; border-radius:12px; box-shadow:0 4px 15px rgba(0,0,0,0.3); overflow:hidden; color:white; font-family:'Outfit', sans-serif, Arial;">
+                    <div style="background-color:#1a1a1d; padding:20px 30px; text-align:center; border-bottom:1px solid #2a2a2d;">
+                        <h1 style="margin:0; font-size:26px; color:white; font-family:'Outfit', sans-serif, Arial; letter-spacing:1px;">
+                            <span style="display:inline-block; vertical-align:middle; margin-right:8px;">🎬</span> TheCinePass
+                        </h1>
+                    </div>
+                    <div style="padding:25px 35px; line-height:1.6;">
+                        <h2 style="color:white; margin-top:0; margin-bottom:20px; font-size:22px; font-family:'Outfit', sans-serif, Arial;">Hello ${userName},</h2>
+                        <p style="margin-bottom:15px; font-size:16px; font-family:'Outfit', sans-serif, Arial;">We are excited to announce a new show:</p>
+                        <div style="background-color:#161618; padding:20px; border-radius:8px; margin-bottom:25px; text-align:center;">
+                            <h3 style="color:#F84565; font-size:26px; margin:0; padding:0; font-family:'Outfit', sans-serif, Arial;">${movieTitle}</h3>
+                        </div>
+                        <p style="text-align:center;">
+                            <a href="/show/${movieId}" style="display:inline-block; background-color:#F84565; color:white; padding:14px 30px; border-radius:6px; text-decoration:none; font-weight:bold; font-size:18px; font-family:'Outfit', sans-serif, Arial;">
+                                View Show Details
+                            </a>
+                        </p>
+                        <p style="margin-top:20px;">Thank you for being a part of TheCinePass community!</p>
+                    </div>
+                    <div style="background-color:#1a1a1d; padding:15px 30px; text-align:center; font-size:13px; color:#888888; border-top:1px solid #2a2a2d; font-family:'Outfit', sans-serif, Arial;">
+                        <p style="margin:0;">TheCinePass Team</p>
+                        <p style="margin:5px 0 0 0;">&copy; 2025 TheCinePass. All rights reserved.</p>
+                    </div>
+                </div>    
+            `;
+            await sendEmail({
+                to: userEmail,
+                subject: subject,
+                body: body
+            });
+        }
+        return { message: "New show notification sent to all users" };
+    }
+)
+
 export const functions = [
     syncUserCreation,
     syncUserDeletion, 
     syncUserUpdation,
     releaseSeatsAndDeleteBooking,
-    sendBookingConfirmationEmail
+    sendBookingConfirmationEmail,
+    showSendReminders,
+    sendNewShowNotification
 ];
