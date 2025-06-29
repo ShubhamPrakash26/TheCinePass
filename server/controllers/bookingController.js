@@ -1,6 +1,7 @@
 import Show from "../models/Shows.js";
 import Booking from "../models/Booking.js";
 import stripe from 'stripe';
+import { inngest } from "../inggest/index.js";
 
 //Funtion to check availability of selected seats for a movie
 
@@ -76,6 +77,14 @@ export const createBooking = async (req, res) => {
 
         booking.paymentLink = session.url;
         await booking.save();
+        
+        //Run inggest function to release the seats and delete the booking after 10 minutes
+        await inngest.send({
+            name: "app/checkpayment",
+            data: {
+                bookingId: booking._id.toString(),
+            }
+        })
 
         res.json({success: true, url: session.url});
     } catch(error) {
