@@ -1,9 +1,9 @@
 @import url('https://fonts.googleapis.com/css2?family=Lexend:wght@100..900&family=Montserrat:ital,wght@0,100..900;1,100..900&family=Outfit:wght@100..900&family=Plus+Jakarta+Sans:ital,wght@0,200..800;1,200..800&display=swap');
 @import "tailwindcss";
 
-@theme{
-  --color-primary: #F84565;
-  --color-primary-dull: #D63854;
+@theme {
+  --color-primary: #3B82F6; /* Blue-500 */
+  --color-primary-dull: #2563EB; /* Blue-600 */
 }
 
 *{
